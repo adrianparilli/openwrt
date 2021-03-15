@@ -1,34 +1,99 @@
-  _______                     ________        __
- |       |.-----.-----.-----.|  |  |  |.----.|  |_
- |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|
- |_______||   __|_____|__|__||________||__|  |____|
-          |__| W I R E L E S S   F R E E D O M
- -----------------------------------------------------
+# OpenWRT for Old devices:
 
-This is the buildsystem for the OpenWrt Linux distribution.
+## TL;DR
 
-To build your own firmware you need a Linux, BSD or MacOSX system (case
-sensitive filesystem required). Cygwin is unsupported because of the lack
-of a case sensitive file system.
+### DO NOT BUY DEVICES WITH 4MB FLASH / 32MB RAM!
 
-You need gcc, binutils, bzip2, flex, python, perl, make, find, grep, diff,
-unzip, gawk, getopt, subversion, libz-dev and libc headers installed.
 
-1. Run "./scripts/feeds update -a" to obtain all the latest package definitions
-defined in feeds.conf / feeds.conf.default
+## Introduction:
+This code builds a *discontinued* version of OpenWRT (18.06), and has been specifically modified to build targets which due its reduced RAM/space, a.k.a ["4/32 devices"](https://openwrt.org/supported_devices/432_warning), are unable to hold more recent versions of 'standard' OpenWRT, and therefore, support has been discontinued for them.
 
-2. Run "./scripts/feeds install -a" to install symlinks for all obtained
-packages into package/feeds/
+Already as of version 18.06, some devices are misworking despite being supported: Such is the case of TL-WA850RE v2 (and probably many others), which it's unable to keep changes between reboots due the firmware size is too big for the available space (<4 MB) leaving no room for overlay partition. By version 19.07 and afterwards, support for many 4/32 devices has been completely dropped and in version 21.02 and afterwards won't have any support at all.
 
-3. Run "make menuconfig" to select your preferred configuration for the
-toolchain, target system & firmware packages.
+While getting a more modern router it's the most viable, and recommended option, many of these "4/32 devices" can still serve as 'home routers' or be re-used for different purposes (and not anyoe is in the power of discard a fully functional router for economical reasons.)
 
-4. Run "make" to build your firmware. This will download all sources, build
-the cross-compile toolchain and then cross-compile the Linux kernel & all
-chosen applications for your target system.
+The only way to use OpenWRT on such devices, and expand/extend its usability for 'non-production scenarios' (home, small business, give it away to/from someone, etc.) it's by building a custom firmware with less packages and dropping support for unnecessary things (e.g. IPv6 support), building its kernel specifically for the target mchine.
 
-Sunshine!
-	Your OpenWrt Community
-	http://www.openwrt.org
+This approach has been [previously described at OpenWRT Wiki](https://openwrt.org/docs/guide-user/additional-software/saving_space), and code has been modified following such guide as base.
 
+Currently, builds in this way one AR71XX/tiny subtarget: The TL-WR841N/ND v8, but it can be easily modified to build other devices with minimal modifications.
+
+It has been tested, and works just fine with:
+
+- TL-WR841N/ND v8
+- TL-WR1043N/ND v1.x
+- TL-WA850RE v2
+
+## DISCLAIMER:
+
+It should work with other TP-Link routers and APs supported by OpenWRT, but has not been tested except with the above mentioned ones.
+
+Not following the steps described below may lead to brick your device permanently.
+
+USE AT YOUR OWN RISK !!
+
+## Contents:
+
+- [config-tl-wr841-v8-minimal-luci](config-tl-wr841-v8-minimal-luci): .config file template for a very minimal, still fully functional OpenWRT with LUCI and firewall app.
+
+- [config-default](target/linux/ar71xx/tiny/config-default): Functional example of target set specifically for this router.
+
+- [config-tl-wr841-v8-minimal-luci-mwan3-curl] (config-tl-wr841-v8-minimal-luci-mwan3-curl): example of .config template based upon the the above that builds firmware with but with Load balancing, IPset and curl for the TL-WR841N/ND v8.
+
+CAUTION: Do not edit these files manually. Use the instructions below so the builder system creates files accordign with the devices you are building firmware for!
+
+## How to build minimal firmware for your router:
+
+1. Check the [OpenWrt Hardware Database](https://openwrt.org/toh/start?dataflt%5BSupported+Current+Rel_releasepage*%7E%5D=18.06) to see if your device it's supported by version 18.06
+
+2. If it's supported by model and hardware version, check its page at OpenWRT database. Look for features, issues, de-bricking methods and other info. If look suitable for you to proceed, then clone this repo on your machine.
+
+3a. Set your environment by reading [this guide](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem)
+
+*or*
+
+3b. Create a Docker container to be your build environment. You will need to install Docker Engine (read [these instructions]((https://docs.docker.com/engine/install/)) if you don't have it) and pull a docker image which has the full environment set. [This Docker image](https://hub.docker.com/r/p3terx/openwrt-build-env) has been used for doing this work and has prooved to work just fine.
+
+*Once you have your environment ready, up and running (no matter the method above, it's your choice), then follow *the classic steps* to build firmware:*
+
+4. Run `./scripts/feeds update -a && ./scripts/feeds install -a`
+
+5. Run `cp config-tl-wr841-v8-minimal-luci .config`, in order to provision a minimal default in the next steps
+
+6. Run `make menuconfig`, set Target Architecture and Subtarget Machine to your own. Save and exit.
+
+7. Run `make kernel_menuconfig CONFIG_TARGET=subtarget` and go to Machine selection / <Platform> machine selection, look for your specific device, select it, *AND disable tl-wr841-v8*. Save changes and exit.
+
+### At this point, you should save this exact setup as base for all further additions you want to put on your firmware, by saving a copy .config file as a template.
+
+8. Run `make download` to download source code of packages you're next to build
+
+9. Then, run `make -jn` (where *n* is the number of cores/threads plus 1. If you have, e.g. a Ryzen 3500U (4 cores, 8 threads) the right option would be 'j9'. Use the index that fits your CPU.)
+
+### If builds without errors, you should have resulting firmwares on bin/targets/ar71xx/tiny/ (relative to your local copy of this repository's path). Pay attention to two specific files:
+
+- <your-router-model-and-version>-squashfs-factory.bin
+- <your-router-model-and-version>-squashfs-sysupgrade.bin
+
+ *-factory.bin is always around 3.8 MB
+ *-sysupgrade.bin should be LESS than 3.8 (around 2.9 - 3.0 MB if nothing but minimal defaults as of template was built.)
+
+This looks as a firmware that is safe to flash. Consult the OpenWRT's page for your device to know how to flash safely.
+
+From this point, additions are optional and most likely, you can just add one or two features as much, since you will run out of space quickly. Remember to repeat Step #8 if you add more features before to build again.
+
+In my case, I added Mwan3 for load balancing and a very minimal build of curl to gather DDNS via crontab (DDNS app was too much big and caused unstability.) Fro this, I had to drop a few busybox options rather than just IPV6 support; such as drop help commands, and compress /bin/ash interpreter in order to make fit all.
+
+## Troubleshooting / Hints
+
+- When building exists with an error, or you experiment any of the below described issues, build with command `make V=sc` to see what is happening on each step of the build.
+
+### 'Tiny' subtarget
+
+- TL-WR841N/ND v8: You added features and none of two above mentioned .bin files are created and/or updated upon builds. Reason: *There is not enough room.* You need to drop other components and/or options than I did, in order to make it fit. Kind of try and error.
+
+- TL-WA850RE v2: sysupgrade.bin is EQUAL OR GREATER than factory.bin in size. This Wifi extender has so few available space that basically doesn't allow any other additions. If you added something and see this kind of scenario YOU MUST NOT flash such images, because you're in risk of brick the device! (this model has not known de-bricking workaround but open the case and use TTL.)
+
+### 'Generic' subtarget
+- TL-WR1043N/ND v1.x: Too many added features and you will start experimenting unstability or even crashes and aleatory reboots. Reason: Not enough RAM. Zram-swap is needed to overcome -partially- this issue, but the best choice it's to limit the additions to a minimal that allows it to work in stable way.
 
